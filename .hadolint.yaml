@@ -1,0 +1,4 @@
+# Base images are pinned by tag; pinning apt package versions breaks builds
+# whenever Debian ships a security update, so DL3008 is accepted here.
+ignored:
+  - DL3008

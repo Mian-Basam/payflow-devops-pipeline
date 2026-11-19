@@ -1,0 +1,54 @@
+# Jenkins Configuration as Code: the whole controller is defined here.
+jenkins:
+  systemMessage: "PayFlow CI lab - configured as code (JCasC). Manual changes are overwritten on restart."
+  numExecutors: 2
+  securityRealm:
+    local:
+      allowsSignup: false
+      users:
+        - id: admin
+          password: ${JENKINS_ADMIN_PASSWORD}
+  authorizationStrategy:
+    loggedInUsersCanDoAnything:
+      allowAnonymousRead: false
+
+credentials:
+  system:
+    domainCredentials:
+      - credentials:
+          - usernamePassword:
+              scope: GLOBAL
+              id: registry-creds
+              description: Lab registry (no auth; placeholder values)
+              username: lab
+              password: lab
+
+unclassified:
+  location:
+    url: http://localhost:8090/
+  timestamper:
+    allPipelines: true
+
+jobs:
+  - script: |
+      pipelineJob('payflow-pipeline') {
+        description('PayFlow: lint, test, build, scan, push, deploy. Defined by Job DSL in JCasC.')
+        parameters {
+          choiceParam('TARGET_ENV', ['staging', 'production'], 'Inventory group to deploy to')
+          booleanParam('SKIP_DEPLOY', true, 'Lab default: build, test, scan and push only')
+        }
+        properties {
+          pipelineTriggers { triggers { pollSCM { scmpoll_spec('H/2 * * * *') } } }
+        }
+        definition {
+          cpsScm {
+            scm {
+              git {
+                remote { url(System.getenv('REPO_URL')) }
+                branch('*/main')
+              }
+            }
+            scriptPath('Jenkinsfile')
+          }
+        }
+      }

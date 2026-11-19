@@ -1,0 +1,55 @@
+- name: Create app directories
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    owner: "{{ deploy_user }}"
+    mode: "0755"
+  loop:
+    - "{{ app_dir }}"
+    - "{{ app_dir }}/scripts"
+    - "{{ app_state_dir }}"
+
+- name: Ship deploy and ops scripts
+  ansible.builtin.copy:
+    src: "{{ playbook_dir }}/../scripts/"
+    dest: "{{ app_dir }}/scripts/"
+    mode: "0755"
+
+- name: Write environment file
+  ansible.builtin.template:
+    src: payflow.env.j2
+    dest: "{{ app_dir }}/payflow.env"
+    mode: "0640"
+
+- name: Check currently deployed image
+  ansible.builtin.slurp:
+    src: "{{ app_state_dir }}/current_image"
+  register: current_image
+  failed_when: false
+
+- name: Deploy new image with canary + rollback
+  ansible.builtin.command:
+    cmd: "{{ app_dir }}/scripts/deploy.sh {{ app_image }}"
+  environment:
+    APP_NAME: "{{ app_name }}"
+    LIVE_PORT: "{{ app_live_port }}"
+    STATE_DIR: "{{ app_state_dir }}"
+  register: deploy_out
+  changed_when: true
+  when: >-
+    current_image.content is not defined or
+    (current_image.content | b64decode | trim) != app_image
+
+- name: Show deploy log
+  ansible.builtin.debug:
+    var: deploy_out.stdout_lines
+  when: deploy_out is changed
+
+- name: Final health check
+  ansible.builtin.uri:
+    url: "http://localhost:{{ app_live_port }}/health"
+    return_content: true
+  register: health
+  retries: 5
+  delay: 3
+  until: health.status == 200

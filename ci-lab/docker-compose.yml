@@ -1,0 +1,67 @@
+# Local CI/CD lab: everything the pipeline needs, on one machine.
+#   Gitea      http://localhost:3001   - Git server (stands in for Bitbucket)
+#   Jenkins    http://localhost:8090   - configured as code (JCasC), job pre-created
+#   TeamCity   http://localhost:8111   - server + 1 build agent
+#   Registry   localhost:5000          - private Docker registry
+name: ci-lab
+
+services:
+  gitea:
+    image: gitea/gitea:1.22.3
+    environment:
+      GITEA__security__INSTALL_LOCK: "true"
+      GITEA__server__ROOT_URL: http://localhost:3001/
+      GITEA__server__HTTP_PORT: "3000"
+      GITEA__service__DISABLE_REGISTRATION: "false"
+    volumes: [gitea-data:/data]
+    ports: ["3001:3000", "2222:22"]
+    restart: unless-stopped
+
+  registry:
+    image: registry:2.8.3
+    volumes: [registry-data:/var/lib/registry]
+    ports: ["5000:5000"]
+    restart: unless-stopped
+
+  jenkins:
+    build: ./jenkins
+    environment:
+      CASC_JENKINS_CONFIG: /var/jenkins_home/casc/jenkins.yaml
+      JAVA_OPTS: -Djenkins.install.runSetupWizard=false
+      JENKINS_ADMIN_PASSWORD: ${JENKINS_ADMIN_PASSWORD:-admin}
+      REPO_URL: ${REPO_URL:-http://gitea:3000/devops/payflow-devops-pipeline.git}
+      REGISTRY: localhost:5000
+    volumes:
+      - jenkins-home:/var/jenkins_home
+      - ./jenkins/casc:/var/jenkins_home/casc:ro
+      - /var/run/docker.sock:/var/run/docker.sock   # builds run on the host Docker engine
+    ports: ["8090:8080"]
+    depends_on: [gitea, registry]
+    restart: unless-stopped
+
+  teamcity-server:
+    image: jetbrains/teamcity-server:2024.07.3
+    volumes:
+      - teamcity-data:/data/teamcity_server/datadir
+      - teamcity-logs:/opt/teamcity/logs
+    ports: ["8111:8111"]
+    restart: unless-stopped
+
+  teamcity-agent:
+    image: jetbrains/teamcity-agent:2024.07.3-linux-sudo
+    environment:
+      SERVER_URL: http://teamcity-server:8111
+      AGENT_NAME: lab-agent-1
+      DOCKER_IN_DOCKER: "start"
+    privileged: true
+    volumes: [teamcity-agent-conf:/data/teamcity_agent/conf]
+    depends_on: [teamcity-server]
+    restart: unless-stopped
+
+volumes:
+  gitea-data: {}
+  registry-data: {}
+  jenkins-home: {}
+  teamcity-data: {}
+  teamcity-logs: {}
+  teamcity-agent-conf: {}

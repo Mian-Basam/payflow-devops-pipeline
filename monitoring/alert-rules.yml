@@ -1,0 +1,28 @@
+groups:
+  - name: payflow
+    rules:
+      - alert: PayflowApiDown
+        expr: up{job="payflow-api"} == 0
+        for: 1m
+        labels: { severity: critical }
+        annotations:
+          summary: "PayFlow API target is down"
+          runbook: "docs/RUNBOOK.md#api-down"
+
+      - alert: PayflowHigh5xxRate
+        expr: |
+          sum(rate(payflow_http_requests_total{status=~"5.."}[5m]))
+            / clamp_min(sum(rate(payflow_http_requests_total[5m])), 1e-9) > 0.05
+        for: 5m
+        labels: { severity: warning }
+        annotations:
+          summary: "More than 5% of requests are failing with 5xx"
+
+      - alert: PayflowSlowRequests
+        expr: |
+          histogram_quantile(0.95,
+            sum by (le) (rate(payflow_http_request_duration_seconds_bucket[5m]))) > 0.5
+        for: 10m
+        labels: { severity: warning }
+        annotations:
+          summary: "p95 latency above 500ms"

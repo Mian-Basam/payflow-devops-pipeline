@@ -1,0 +1,37 @@
+image: python:3.12-slim
+
+definitions:
+  steps:
+    - step: &test
+        name: Lint & test
+        caches: [pip]
+        script:
+          - apt-get update -qq && apt-get install -y -qq shellcheck
+          - pip install -q -r requirements-dev.txt
+          - ruff check app tests
+          - pytest -q --junitxml=test-results/junit.xml
+          - shellcheck scripts/*.sh
+    - step: &build
+        name: Build & push image
+        services: [docker]
+        script:
+          - export TAG="${BITBUCKET_BUILD_NUMBER}-${BITBUCKET_COMMIT:0:7}"
+          - docker build --build-arg APP_VERSION=$TAG -t $REGISTRY/payflow-api:$TAG .
+          - echo "$REGISTRY_PASS" | docker login $REGISTRY -u "$REGISTRY_USER" --password-stdin
+          - docker push $REGISTRY/payflow-api:$TAG
+
+pipelines:
+  pull-requests:
+    '**':
+      - step: *test
+  branches:
+    main:
+      - step: *test
+      - step: *build
+      - step:
+          name: Deploy to staging
+          deployment: staging
+          script:
+            - pip install -q ansible-core
+            - ansible-playbook -i ansible/inventory.ini ansible/site.yml --limit staging
+              -e app_image=$REGISTRY/payflow-api:${BITBUCKET_BUILD_NUMBER}-${BITBUCKET_COMMIT:0:7}

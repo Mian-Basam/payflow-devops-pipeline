@@ -1,0 +1,87 @@
+# Mirror of the Jenkins/TeamCity test + build stages so the repo shows a
+# green badge on GitHub. Deployment lives in Jenkins/TeamCity (on-prem).
+name: CI
+on:
+  push:
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12" }
+      - run: pip install -r requirements-dev.txt ansible yamllint
+      - run: ruff check app tests
+      - run: pytest -q
+      - run: shellcheck scripts/*.sh
+      - run: yamllint -c .yamllint.yml .
+      - run: ansible-playbook -i ansible/inventory.ini ansible/site.yml --syntax-check
+
+  docker:
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: docker build --build-arg APP_VERSION=${GITHUB_SHA::7} -t payflow-api:ci .
+      - name: Run container and health/smoke test
+        run: |
+          docker run -d --name api -p 8000:8000 payflow-api:ci
+          ./scripts/healthcheck.sh http://localhost:8000 10 2
+          ./scripts/smoke_test.sh http://localhost:8000
+      - name: Full stack (nginx + prometheus + grafana) comes up
+        run: |
+          docker rm -f api
+          docker compose up -d --build --wait
+          ./scripts/smoke_test.sh http://localhost:8080
+          curl -fsS http://localhost:9090/-/ready
+      - if: always()
+        run: docker compose logs --tail 50 || true
+
+  security-scan:
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: docker build -t payflow-api:scan .
+      - name: Trivy image scan (fail on fixable HIGH/CRITICAL)
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          image-ref: payflow-api:scan
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+          exit-code: "1"
+      - name: Trivy IaC scan (Dockerfile, k8s, compose)
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          scan-type: config
+          scan-ref: .
+          severity: HIGH,CRITICAL
+          exit-code: "1"
+
+  kubernetes:
+    needs: docker
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: helm/kind-action@v1.10.0
+        with:
+          cluster_name: payflow
+          config: k8s/kind-config.yaml
+      - name: Deploy v1 to kind
+        run: ./scripts/k8s_deploy.sh v1
+      - name: Rolling update to v2 with zero failed requests
+        run: |
+          ( for i in $(seq 300); do curl -s -o /dev/null -w '%{http_code}\n' localhost:30080/health; sleep 0.1; done ) > codes.txt &
+          ./scripts/k8s_deploy.sh v2
+          wait
+          sort codes.txt | uniq -c
+          ! grep -qv '^200$' codes.txt
+      - name: Rollback returns to v1
+        run: |
+          ./scripts/k8s_deploy.sh --rollback
+          sleep 5
+          curl -fsS localhost:30080/health | grep -q '"version":"v1"'
+      - if: failure()
+        run: kubectl -n payflow describe pods; kubectl -n payflow logs -l app=payflow-api --tail=50

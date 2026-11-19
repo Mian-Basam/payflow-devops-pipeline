@@ -1,0 +1,17 @@
+app_name: payflow-api
+app_image: payflow-api:latest
+app_live_port: 8000
+app_dir: /opt/payflow
+app_state_dir: /var/lib/payflow
+deploy_user: deploy
+base_packages:
+  - curl
+  - htop
+  - jq
+  - ca-certificates
+  - chrony
+  - ufw
+allowed_tcp_ports:
+  - 22
+  - 80
+  - 8000
