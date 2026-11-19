@@ -33,7 +33,13 @@ echo ">> verify"
 kubectl -n "$NS" get pods -o wide
 ./scripts/healthcheck.sh http://localhost:30080 15 2
 ./scripts/smoke_test.sh http://localhost:30080
-version=$(curl -fsS localhost:30080/health | python3 -c 'import json,sys; print(json.load(sys.stdin)["version"])')
+# Old pods keep answering for a few seconds while they terminate (preStop) and kube-proxy
+# updates its rules, so give the Service up to 30s to report the new version.
+for _ in $(seq 30); do
+  version=$(curl -fsS localhost:30080/health | python3 -c 'import json,sys; print(json.load(sys.stdin)["version"])')
+  [[ "$version" == "$TAG" ]] && break
+  sleep 1
+done
 [[ "$version" == "$TAG" ]] || { echo "expected version $TAG, got $version" >&2; exit 1; }
 echo ">> $IMAGE is live"
 kubectl -n "$NS" rollout history deploy/"$DEPLOY"
