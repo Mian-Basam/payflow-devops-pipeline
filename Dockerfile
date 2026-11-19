@@ -24,4 +24,6 @@ HEALTHCHECK --interval=15s --timeout=3s --retries=3 \
   CMD curl -fsS http://localhost:8000/health || exit 1
 LABEL org.opencontainers.image.title="payflow-api" \
       org.opencontainers.image.version="${APP_VERSION}"
-CMD ["gunicorn", "--bind", "0.0.0.0:8000", "--workers", "2", "--access-logfile", "-", "app.main:app"]
+# One worker: the demo transaction store is in memory, so every request must reach the same
+# process. Threads give concurrency. (A real service would use a shared database instead.)
+CMD ["gunicorn", "--bind", "0.0.0.0:8000", "--workers", "1", "--threads", "8", "--access-logfile", "-", "app.main:app"]

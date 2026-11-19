@@ -5,6 +5,8 @@ metadata:
   namespace: payflow
 spec:
   type: NodePort
+  # in-memory demo store: keep each client on the same pod so create -> read works
+  sessionAffinity: ClientIP
   selector: { app: payflow-api }
   ports:
     - port: 80

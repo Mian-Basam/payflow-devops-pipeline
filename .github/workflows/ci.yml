@@ -46,14 +46,14 @@ jobs:
       - uses: actions/checkout@v4
       - run: docker build -t payflow-api:scan .
       - name: Trivy image scan (fail on fixable HIGH/CRITICAL)
-        uses: aquasecurity/trivy-action@0.28.0
+        uses: aquasecurity/trivy-action@915b19bbe73b92a6cf82a1bc12b087c9a19a5fe2  # v0.28.0
         with:
           image-ref: payflow-api:scan
           severity: HIGH,CRITICAL
           ignore-unfixed: true
           exit-code: "1"
       - name: Trivy IaC scan (Dockerfile, k8s, compose)
-        uses: aquasecurity/trivy-action@0.28.0
+        uses: aquasecurity/trivy-action@915b19bbe73b92a6cf82a1bc12b087c9a19a5fe2  # v0.28.0
         with:
           scan-type: config
           scan-ref: .
