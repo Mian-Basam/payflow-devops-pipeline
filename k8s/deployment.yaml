@@ -27,6 +27,13 @@ spec:
         - name: api
           image: payflow-api:local
           imagePullPolicy: IfNotPresent
+          securityContext:
+            readOnlyRootFilesystem: true      # nothing in the image can be modified at runtime
+            allowPrivilegeEscalation: false
+            capabilities: { drop: ["ALL"] }
+          volumeMounts:
+            - name: tmp                       # gunicorn needs a writable /tmp for worker heartbeats
+              mountPath: /tmp
           ports:
             - containerPort: 8000
           envFrom:
@@ -46,3 +53,6 @@ spec:
           readinessProbe:
             httpGet: { path: /ready, port: 8000 }
             periodSeconds: 5
+      volumes:
+        - name: tmp
+          emptyDir: { medium: Memory, sizeLimit: 16Mi }
