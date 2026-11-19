@@ -24,8 +24,10 @@ echo ">> load image into kind nodes"
 kind load docker-image "$IMAGE" --name "$CLUSTER"
 
 echo ">> apply manifests"
-kubectl apply -k k8s/
-kubectl -n "$NS" set image deploy/"$DEPLOY" api="$IMAGE"
+# Render the manifests with the real image and apply once, so each deploy is exactly one
+# rollout revision (apply + "set image" made two, and "rollout undo" went back to the
+# placeholder image payflow-api:local, which does not exist).
+kubectl kustomize k8s/ | sed "s#image: payflow-api:local#image: $IMAGE#" | kubectl apply -f -
 kubectl -n "$NS" annotate deploy/"$DEPLOY" kubernetes.io/change-cause="deploy $IMAGE" --overwrite
 kubectl -n "$NS" rollout status deploy/"$DEPLOY" --timeout=180s
 

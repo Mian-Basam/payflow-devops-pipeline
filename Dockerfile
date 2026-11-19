@@ -12,7 +12,9 @@ ENV APP_VERSION=${APP_VERSION} \
     PATH="/venv/bin:$PATH" \
     PYTHONUNBUFFERED=1 \
     PORT=8000
-RUN apt-get update && apt-get install -y --no-install-recommends curl \
+# apt-get upgrade pulls in Debian security fixes newer than the base image (found by Trivy)
+# hadolint ignore=DL3005
+RUN apt-get update && apt-get upgrade -y && apt-get install -y --no-install-recommends curl \
     && rm -rf /var/lib/apt/lists/* \
     && useradd --system --uid 10001 payflow
 COPY --from=build /venv /venv
